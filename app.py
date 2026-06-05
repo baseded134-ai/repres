@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -5,23 +7,62 @@ import plotly.express as px
 # Configuración de página
 st.set_page_config(page_title="Dashboard Representantes", layout="wide")
 
+# Carpeta donde vive este script. Resolvemos las rutas relativas a ella para
+# que funcione igual en local y en Streamlit Cloud, sin depender del
+# directorio de trabajo. Si pones los .xlsx en una subcarpeta (ej. "data"),
+# cambia BASE_DIR a: Path(__file__).parent / "data"
+BASE_DIR = Path(__file__).parent
+
+ARCHIVOS = {
+    2014: ("Cuadro 13 - Representantes Proclamados 2014_DESBLOQ.xlsx", "repre2014"),
+    2019: ("Representantes_Proclamados_2019_DESBLOQ.xlsx", "repre2019"),
+    2024: ("Cuadro_13_Representantes_Proclamados_2024_DESBLOQ.xlsx", "repre2024"),
+}
+
+
+def _normaliza(s):
+    # Trata espacios, guiones bajos y guiones como equivalentes, e ignora
+    # mayúsculas. Así no importa si el archivo en el repo se llama
+    # "Cuadro 13 - ..." o "Cuadro_13_-_..." al hacer la comparación.
+    s = s.lower()
+    for ch in (" ", "_", "-"):
+        s = s.replace(ch, "")
+    return s
+
+
+def _leer(nombre, hoja):
+    ruta = BASE_DIR / nombre
+    if not ruta.exists():
+        # Búsqueda tolerante: espacios / guiones bajos / guiones intercambiables.
+        objetivo = _normaliza(nombre)
+        candidato = next(
+            (p for p in BASE_DIR.glob("*.xlsx") if _normaliza(p.name) == objetivo),
+            None,
+        )
+        if candidato is not None:
+            ruta = candidato
+        else:
+            presentes = sorted(p.name for p in BASE_DIR.glob("*.xlsx"))
+            st.error(
+                f"No se encontró el archivo:\n\n`{nombre}`\n\n"
+                f"Carpeta consultada: `{BASE_DIR}`\n\n"
+                f"Archivos .xlsx disponibles ahí: {presentes or 'ninguno'}\n\n"
+                "Asegúrate de que los .xlsx estén subidos al repositorio "
+                "(mismo folder que app.py) y que el nombre coincida (mayúsculas "
+                "y acentos incluidos)."
+            )
+            st.stop()
+    return pd.read_excel(ruta, sheet_name=hoja)
+
+
 # Carga de datos con caché
 @st.cache_data
 def load_data():
     # Los datos reales están en las hojas 'repreAAAA', NO en 'Hoja1' ni 'Diputado 3'.
     # 'Hoja1' en los archivos 2014/2024 es solo una hoja auxiliar de pocas filas.
-    df_2014 = pd.read_excel(
-        "Cuadro_13_-_Representantes_Proclamados_2014_DESBLOQ.xlsx",
-        sheet_name="repre2014",
-    )
-    df_2019 = pd.read_excel(
-        "Representantes_Proclamados_2019_DESBLOQ.xlsx",
-        sheet_name="repre2019",
-    )
-    df_2024 = pd.read_excel(
-        "Cuadro_13_Representantes_Proclamados_2024_DESBLOQ.xlsx",
-        sheet_name="repre2024",
-    )
+    df_2014 = _leer(*ARCHIVOS[2014])
+    df_2019 = _leer(*ARCHIVOS[2019])
+    df_2024 = _leer(*ARCHIVOS[2024])
 
     # Estandarización básica
     # Cada archivo tiene 7 columnas: PROVINCIA, DISTRITO, CORREGIMIENTO,
